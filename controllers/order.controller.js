@@ -1,5 +1,4 @@
 const Order   = require('../models/Order');
-const Product  = require('../models/Product');
 const { createRazorpayOrder, verifyPaymentSignature } = require('../services/razorpay.service');
 const { sendOrderConfirmation } = require('../services/email.service');
 
@@ -7,22 +6,14 @@ const { sendOrderConfirmation } = require('../services/email.service');
 const createRazorpayOrderHandler = async (req, res) => {
   try {
     const { amount, receipt } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Invalid amount' });
-    }
+    if (!amount || amount <= 0) return res.status(400).json({ success: false, message: 'Invalid amount' });
 
     let razorpayOrder;
     try {
       razorpayOrder = await createRazorpayOrder(amount, receipt || `receipt_${Date.now()}`);
     } catch (err) {
-      // Return mock order if Razorpay not configured (development)
       console.warn('⚠️  Razorpay not configured, using mock order');
-      razorpayOrder = {
-        id: `mock_order_${Date.now()}`,
-        amount: Math.round(amount * 100),
-        currency: 'INR'
-      };
+      razorpayOrder = { id: `mock_order_${Date.now()}`, amount: Math.round(amount * 100), currency: 'INR' };
     }
 
     res.json({
@@ -39,44 +30,30 @@ const createRazorpayOrderHandler = async (req, res) => {
   }
 };
 
-// POST /api/order — save order after payment
+// POST /api/order
 const createOrder = async (req, res) => {
   try {
     const {
       customerName, email, phone, address, items,
       subtotal, shippingCost, totalAmount,
-      razorpayOrderId, razorpayPaymentId, razorpaySignature,
-      notes
+      razorpayOrderId, razorpayPaymentId, razorpaySignature, notes
     } = req.body;
 
-    // Verify Razorpay signature (skip for mock/dev)
-    if (razorpayOrderId && !razorpayOrderId.startsWith('mock_') &&
-        razorpayPaymentId && razorpaySignature) {
+    if (razorpayOrderId && !razorpayOrderId.startsWith('mock_') && razorpayPaymentId && razorpaySignature) {
       const isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-      if (!isValid) {
-        return res.status(400).json({ success: false, message: 'Payment verification failed' });
-      }
-    }
-
-    // Build items array with product validation
-    const orderItems = [];
-    for (const item of items) {
-      orderItems.push({
-        productId: item.productId,
-        name:      item.name,
-        price:     item.price,
-        quantity:  item.quantity,
-        image:     item.image || ''
-      });
+      if (!isValid) return res.status(400).json({ success: false, message: 'Payment verification failed' });
     }
 
     const order = await Order.create({
       customerName, email, phone, address,
-      items: orderItems,
-      subtotal:     subtotal || totalAmount,
+      items: items.map(i => ({
+        productId: i.productId, name: i.name,
+        price: i.price, quantity: i.quantity, image: i.image || ''
+      })),
+      subtotal: subtotal || totalAmount,
       shippingCost: shippingCost || 0,
       totalAmount,
-      paymentStatus: razorpayPaymentId ? 'paid' : 'pending',
+      paymentStatus:     razorpayPaymentId ? 'paid' : 'pending',
       razorpayOrderId:   razorpayOrderId   || null,
       razorpayPaymentId: razorpayPaymentId || null,
       razorpaySignature: razorpaySignature || null,
@@ -84,7 +61,6 @@ const createOrder = async (req, res) => {
       notes: notes || ''
     });
 
-    // Send confirmation emails (non-blocking)
     sendOrderConfirmation(order).catch(console.error);
 
     res.status(201).json({
@@ -103,15 +79,42 @@ const createOrder = async (req, res) => {
   }
 };
 
-// GET /api/order/:id — track order
+// GET /api/order/:id
 const getOrderById = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).lean();
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-    res.json({ success: true, data: order });
+    res.json({
+      success: true,
+      data: { ...order, orderNumber: `ML-${order._id.toString().slice(-6).toUpperCase()}` }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-module.exports = { createRazorpayOrderHandler, createOrder, getOrderById };
+// GET /api/orders/track/:email  — customer order tracking
+const getOrdersByEmail = async (req, res) => {
+  try {
+    const email = req.params.email?.toLowerCase().trim();
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+    const orders = await Order.find({ email })
+      .sort({ createdAt: -1 })
+      .select('_id customerName totalAmount orderStatus paymentStatus createdAt items shippingCost subtotal address phone')
+      .lean();
+
+    res.json({
+      success: true,
+      count: orders.length,
+      data: orders.map(o => ({
+        ...o,
+        orderNumber: `ML-${o._id.toString().slice(-6).toUpperCase()}`
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { createRazorpayOrderHandler, createOrder, getOrderById, getOrdersByEmail };

@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const { createRazorpayOrderHandler, createOrder, getOrderById } = require('../controllers/order.controller');
+const { createRazorpayOrderHandler, createOrder, getOrderById, getOrdersByEmail } = require('../controllers/order.controller');
 const { body } = require('express-validator');
 const { validate } = require('../middleware/validate');
 
@@ -19,5 +19,8 @@ const orderValidation = [
 router.post('/order/create-razorpay-order', createRazorpayOrderHandler);
 router.post('/order', orderValidation, validate, createOrder);
 router.get('/order/:id', getOrderById);
+
+// Customer order tracking — lookup by email
+router.get('/orders/track/:email', getOrdersByEmail);
 
 module.exports = router;

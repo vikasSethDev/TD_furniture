@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
+
 require('dotenv').config();
 
 const productRoutes = require('./routes/product.routes');
@@ -40,7 +41,12 @@ app.use(
 // Body Parsers
 // ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: '10kb'
+  })
+);
 
 // ─────────────────────────────────────────────────────────────
 // API Routes
@@ -54,6 +60,7 @@ app.use('/api/admin', adminRoutes);
 // ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({
+    success: true,
     status: 'OK',
     timestamp: new Date().toISOString()
   });
@@ -61,13 +68,16 @@ app.get('/api/health', (_req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // Angular Production Build
-// Angular 17+ => public/browser
+// Angular 17+ build path
+// client/dist/maison-luxe/browser
 // ─────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
 
   const angularPath = path.join(__dirname, 'public/browser');
 
-  // Serve static Angular files
+  console.log('📦 Angular Path:', angularPath);
+
+  // Serve Angular static files
   app.use(express.static(angularPath));
 
   // Angular SPA fallback
@@ -80,7 +90,8 @@ if (process.env.NODE_ENV === 'production') {
 // Global Error Handler
 // ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
-  console.error('Global Error:', err.stack);
+
+  console.error('❌ Global Error:', err.stack);
 
   res.status(err.status || 500).json({
     success: false,
@@ -99,12 +110,14 @@ const PORT = process.env.PORT || 5000;
 mongoose
   .connect(
     process.env.MONGO_URI ||
-      'mongodb://localhost:27017/maison_luxe'
+    'mongodb://localhost:27017/maison_luxe'
   )
   .then(() => {
+
     console.log('✅ MongoDB Connected');
 
     app.listen(PORT, () => {
+
       console.log(
         `🚀 Server running on http://localhost:${PORT}`
       );
@@ -117,6 +130,7 @@ mongoose
     });
   })
   .catch(err => {
+
     console.error(
       '❌ MongoDB connection error:',
       err.message
